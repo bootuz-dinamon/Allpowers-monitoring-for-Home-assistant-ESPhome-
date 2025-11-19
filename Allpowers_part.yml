@@ -1,0 +1,126 @@
+esp32_ble_tracker:
+
+
+# 2. Налаштовуємо BLE Клієнт (підключення до пристрою)
+ble_client:
+  - mac_address: 2a:02:01:47:20:1d  # <--- ЗАМІНІТЬ НА ВАШУ MAC-АДРЕСУ
+    id: my_ble_device
+    on_connect:
+      then:
+        - logger.log: "Підключено до BLE пристрою!"
+    on_disconnect:
+      then:
+        - logger.log: "Відключено від BLE пристрою."
+
+# 3. Створюємо сенсор, який читає 8-й байт
+sensor:
+  - platform: ble_client
+    ble_client_id: my_ble_device
+    id: battery_level
+    name: "Battery Level"
+    # Вкажіть UUID сервісу та характеристики (з nRF Connect)
+    service_uuid: "0000fff0-0000-1000-8000-00805f9b34fb"       # <--- ПРИКЛАД (замініть на свій)
+    characteristic_uuid: "0000fff1-0000-1000-8000-00805f9b34fb" # <--- ПРИКЛАД (замініть на свій)
+    notify: true        
+    type: characteristic 
+    accuracy_decimals: 0
+    # --- ДОДАНО ДЛЯ HOME ASSISTANT ---
+    device_class: battery       # Змінює іконку та логіку в HA
+    unit_of_measurement: "%"    # Вказує, що це відсотки
+    # ---------------------------------
+    filters:
+      - throttle: 10s
+    
+    # НАЙВАЖЛИВІШЕ: Обробка даних (Lambda)
+    lambda: |-
+      // x - це масив отриманих байтів (std::vector<uint8_t>)
+      // 1. Перевірка розміру (має бути 16 байт)
+      if (x.size() != 16) {
+        return {}; // Ігноруємо все, що не 16 байт
+      }
+
+      // 2. Перевірка типу повідомлення (байт під індексом 5)
+      // У лозі з батареєю там стоїть 0x08. У "сміттєвому" пакеті - 0x06.
+      if (x[5] != 0x08) {
+         return {}; // Ігноруємо, якщо це не пакет даних батареї
+      }
+
+      // 3. Отримуємо значення (байт під індексом 8)
+      uint8_t bat_value = x[8];
+
+      // 4. Захист від "нульового глюка"
+      // Якщо прийшов 0, а пристрій працює - це явно помилка зчитування.
+      // (Якщо для вас 0% це допустиме значення, видаліть цю умову)
+      if (bat_value == 0) {
+        return {};
+      }
+      
+      // 5. Захист від нереальних значень (більше 100%)
+      if (bat_value > 100) {
+        return {};
+      }
+
+        // Виводимо в лог для перевірки (синім кольором)
+      ESP_LOGI("ble_sensor", "Battely Level: %d %%", bat_value);
+        
+      return (float)bat_value;
+      
+      // Якщо даних менше ніж треба, нічого не публікуємо або повертаємо NAN
+      return {};
+
+  - platform: ble_client
+    ble_client_id: my_ble_device
+    id: input_power
+    name: "Input Power"
+    unit_of_measurement: "W"
+    device_class: power
+    # Скопіюйте ваші UUID та налаштування, як у сенсора батареї
+    service_uuid: "0000fff0-0000-1000-8000-00805f9b34fb"
+    characteristic_uuid: "0000fff1-0000-1000-8000-00805f9b34fb"
+    notify: true
+    type: characteristic 
+    filters:
+      - throttle: 10s
+      
+    lambda: |-
+      // Використовуємо той самий жорсткий фільтр, що й для батареї
+      if (x.size() != 16 || x[5] != 0x08) { return {}; }
+
+      // Зчитуємо 16-бітне значення:
+      // x[9] - Старший Байт (MSB), x[8] - Молодший Байт (LSB)
+      uint16_t raw_value = (x[9] << 8) | x[10]; 
+      
+      float power_w = (float)raw_value;
+      
+      // Захист від нулів, якщо це нелогічно
+      if (power_w <= 0.0) { return {}; }
+
+      return power_w;
+
+  - platform: ble_client
+    ble_client_id: my_ble_device
+    id: output_power
+    name: "Output Power"
+    unit_of_measurement: "W"
+    device_class: power
+    # Скопіюйте ті ж самі UUID та налаштування
+    service_uuid: "0000fff0-0000-1000-8000-00805f9b34fb"
+    characteristic_uuid: "0000fff1-0000-1000-8000-00805f9b34fb"
+    notify: true
+    type: characteristic 
+    filters:
+      - throttle: 10s
+      
+    lambda: |-
+      // Використовуємо той самий жорсткий фільтр
+      if (x.size() != 16 || x[5] != 0x08) { return {}; }
+
+      // Зчитуємо 16-бітне значення:
+      // x[11] - Старший Байт (MSB), x[10] - Молодший Байт (LSB)
+      uint16_t raw_value = (x[11] << 8) | x[12]; 
+      
+      float power_w = (float)raw_value;
+      
+      if (power_w <= 0.0) { return {}; }
+      
+      return power_w;

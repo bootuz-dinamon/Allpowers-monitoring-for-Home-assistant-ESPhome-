@@ -1,4 +1,4 @@
-Allpowers monitoring for Home assistant ESPhome
+Monitoring for Home assistant ESPhome
 Charging stations Allpowers 
 
 Allpowers charging stations have a built-in Bluetooth module that transmits BLE notifications with two data sets. By controlling them, you can get information about the battery status, input and output power.
@@ -7,3 +7,6 @@ This example works on charging stations:
 
 And it should also work on the:
 - Allpowers S300
+
+
+Source - https://github.com/madninjaskillz/AllPowersS300ESP32HomeAssistant
